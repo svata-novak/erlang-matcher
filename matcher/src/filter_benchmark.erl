@@ -2,6 +2,9 @@
 
 -export([bench1/2]).
 
+-define(THOUSAND, 1000).
+-define(MILLION, 1000000).
+
 repeat(Server, Event, Repeats) ->
 	case Repeats > 0 of
 		true ->
@@ -15,10 +18,21 @@ bench1(Fun, Repeats) ->
 	{ok, Server} = filter:start(Fun, [size], undefined),
 	Event1 = orddict:store(size, 500, orddict:new()),
 	gen_server:call(Server, {set_benchmark_data, {self(), Repeats}}, infinity),
-	io:format("Start: ~p~n", [erlang:now()]),
+	StartTime = erlang:now(),
+	io:format("Start: ~p~n", [StartTime]),
 	repeat(Server, Event1, Repeats),
-	receive
-		_ -> io:format("Finish: ~p~n", [erlang:now()])
+	FinishTime = receive
+		_ ->
+			FTime = erlang:now(),
+			io:format("Finish: ~p~n", [FTime]),
+			FTime
 	end,
+	ElapsedTime = timer:now_diff(FinishTime, StartTime),
+	io:format("Elapsed time: ~p us = ~p ms = ~p s~n",
+			  [ElapsedTime, ElapsedTime / ?THOUSAND, ElapsedTime / ?MILLION]),
+	AverageEventElapsed = ElapsedTime / Repeats,
+	io:format("Average elapsed time per one event: ~p us = ~p ms = ~p s~n",
+			  [AverageEventElapsed, AverageEventElapsed / ?THOUSAND,
+			   AverageEventElapsed / ?MILLION]),
 	%benchmark_util:test_avg(gen_server, cast, [Server, {event, Event1}], 10000000),
 	ok.
