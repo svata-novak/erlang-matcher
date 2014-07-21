@@ -2,28 +2,44 @@
 
 %% Input arguments:
 %%
-%% Predicate - a simple fun(ction) that returns true or false and can be
-%% converted to match specification
-%% For example: "fun({A}) -> A > 1000 end" or
-%% "fun({A, B}) when is_integer(A) -> abs(A) + abs(B) > 1000 end"
+%% PredicateMS - a match specification that returns true or false
 %%
-%% AttrNameList - list of event attributes corresponding to the fun arguments
-%% For example: [size] or [x, y]
+%% Example functions that can be converted to such match specifications
+%% using ets:fun2ms/1:
+%% fun({X, Y, Z}) -> X > 1000 end
+%% (corresponding match specification:
+%% [{{'$1','$2','$3'},[],[{'>','$1',1000}]}]
+%% )
 %%
-%% If predicate equals "fun({A}) -> A > 1000 end" and AttrNameList equals [size]
-%% then an event matches the predicate (causing the notify/3 function to be
-%% called) if the event has an attribute called size which has a value greater
-%% than 1000
+%% fun({X, Y, Z}) when is_integer(X) -> abs(X) + abs(Y) > 1000 end
+%%
+%% (corresponding match specification:
+%% [{{'$1','$2','$3'},
+%%   [{is_integer,'$1'}],
+%%   [{'>',{'+',{abs,'$1'},{abs,'$2'}},1000}]}]
+%% )
 %%
 %% Callback - An object that will get a notification
 %% if an incoming event matches the predicate
+%%
+%% TimeOut - how long before handle_info(timeout, State) is called after
+%% receiving last message
+%% Primarily for benchmark purposes (for sending the elapsed time)
+%%
+%%
+%% Events are represented as tuples of size 3
+%%
+%% Example: If a predicate match spec corresponds to the function
+%% "fun({X, Y, Z}) -> X > 1000 end", then an event matches the predicate
+%% (causing the notify/3 function to be called) if the first value of the
+%% tuple that representes the event is greater than 1000
+%%
 
-%% Events are represented as orddicts
 %% Usage example (replace Ref with the actual receiver reference):
-%% {ok, Server} = filter:start(fun({A}) -> A > 1000 end, [size], Ref).
-%% gen_server:cast(Server, {event, orddict:store(size, 500, orddict:new())}).
+%% {ok, Server} = filter:start([{{'$1','$2','$3'},[],[{'>','$1',1000}]}], undefined, infinity).
+%% gen_server:cast(Server, {event, {500, 0, 0}}).
 %% (notify is not called)
-%% gen_server:cast(Server, {event, orddict:store(size, 2000, orddict:new())}).
+%% gen_server:cast(Server, {event, {2000, 0, 0}}).
 %% (notify is called)
 %% ...
 
@@ -40,68 +56,59 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--record(state, {predicate, attr_list, callback, event_count, event_notification_count, benchmark_callback}).
+-record(state, {predicate_ms, callback, benchmark_callback, benchmark_start_time,
+				timeout}).
 
-start(Predicate, AttrNameList, Callback) ->
-	gen_server:start(?MODULE, [Predicate, AttrNameList, Callback], []).
+start(PredicateMS, Callback, TimeOut) ->
+	gen_server:start(?MODULE, [PredicateMS, Callback, TimeOut], []).
 
-start_link(Predicate, AttrNameList, Callback) ->
-	gen_server:start_link(?MODULE, [Predicate, AttrNameList, Callback], []).
+start_link(PredicateMS, Callback, TimeOut) ->
+	gen_server:start_link(?MODULE, [PredicateMS, Callback, TimeOut], []).
 
-init([Predicate, AttrNameList, Callback]) ->
-	MatchSpec = ets:fun2ms(Predicate),
-	case MatchSpec of
-		{error, Error} -> {stop, Error};
-		_ ->
-			% check the AttrNameList has the correct number of parameters
-			case tuple_size(element(1, hd(MatchSpec))) == length(AttrNameList) of
-				true -> {ok, #state{predicate=ets:match_spec_compile(MatchSpec),
-						 attr_list=AttrNameList, callback=Callback, event_count=0,
-						 event_notification_count=-1}};
-				_ -> {stop, wrong_number_of_parameters}
-			end
-	end.
+init([PredicateMS, Callback, TimeOut]) ->
+	{ok, #state{predicate_ms=ets:match_spec_compile(PredicateMS),
+				callback=Callback, timeout=TimeOut}, TimeOut}.
 
-handle_call({set_benchmark_data, {BenchmarkCallback, EventNotificationCount}}, _From, State) ->
+% set benchmark related information, store the current time
+handle_call({start_benchmark, BenchmarkCallback}, _From, State) ->
+	TimeOut = State#state.timeout,
 	{reply, ok, State#state{benchmark_callback=BenchmarkCallback,
-							event_notification_count=EventNotificationCount}};
-
-handle_call(get_event_count, _From, State=#state{event_count=EventCount}) ->
-	{reply, EventCount, State};
+							benchmark_start_time=erlang:now()}, TimeOut};
 
 handle_call(_E, _From, State) ->
-    {noreply, State}.
+    {reply, ok, State}.
 
 % not implemented yet
-notify(_Callback, _Event, _Predicate) ->
+notify(_Callback, _Event, _PredicateMS) ->
 	ok.
 
-update_event_count(State=#state{event_count=EventCount,
-								event_notification_count=EventNotificationCount,
-								benchmark_callback=BenchmarkCallback}) ->
-	NewEventCount = EventCount + 1,
-	case NewEventCount of
-		EventNotificationCount -> BenchmarkCallback ! EventNotificationCount;
+% if the event matches the predicate, call notify/3
+match(Event, PredicateMS, Callback) when is_tuple(Event) ->
+	case ets:match_spec_run([Event], PredicateMS) of
+		[true] -> notify(Callback, Event, PredicateMS);
 		_ -> ok
-	end,
-		
-	State#state{event_count=NewEventCount}.
+	end.
 
 %% handle incoming events, notify the observer if the event matches the predicate
-handle_cast({event, Event}, State=#state{attr_list=AttrList,
-	predicate=Predicate, callback=Callback}) ->
-	OrderedAttrValList = util:extract_attr_values(AttrList, Event),
-	case OrderedAttrValList of
-		not_found -> ok; % some predicate attribute is not contained in the event
-		_ -> case ets:match_spec_run([list_to_tuple(OrderedAttrValList)], Predicate) of
-			[true] -> notify(Callback, Event, Predicate); % matched
-			_ -> ok % didn't match
-		end
-	end,
-	{noreply, update_event_count(State)};
+handle_cast({event, Event}, State) when is_record(State, state) ->
+	PredicateMS = State#state.predicate_ms,
+	Callback = State#state.callback,
+	TimeOut = State#state.timeout,
+	match(Event, PredicateMS, Callback),
+	{noreply, State, TimeOut};
 
 handle_cast(_E, State) ->
     {noreply, State}.
+
+% send the elapsed time to the benchmark process, stop the gen_server
+% (it won't be needed again)
+handle_info(timeout, State) ->
+	BenchmarkEndTime = erlang:now(),
+	BenchmarkCallback = State#state.benchmark_callback,
+	BenchmarkStartTime = State#state.benchmark_start_time,
+	TimeOut = State#state.timeout,
+	BenchmarkCallback ! timer:now_diff(BenchmarkEndTime, BenchmarkStartTime) - (TimeOut * 1000),
+	{stop, timeout, State};
 
 handle_info(_E, State) ->
 	{noreply, State}.
