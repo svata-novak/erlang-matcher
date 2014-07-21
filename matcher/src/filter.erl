@@ -40,7 +40,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--record(state, {predicate, attr_list, callback}).
+-record(state, {predicate, attr_list, callback, event_count, event_notification_count, benchmark_callback}).
 
 start(Predicate, AttrNameList, Callback) ->
 	gen_server:start(?MODULE, [Predicate, AttrNameList, Callback], []).
@@ -56,10 +56,18 @@ init([Predicate, AttrNameList, Callback]) ->
 			% check the AttrNameList has the correct number of parameters
 			case tuple_size(element(1, hd(MatchSpec))) == length(AttrNameList) of
 				true -> {ok, #state{predicate=ets:match_spec_compile(MatchSpec),
-						 attr_list=AttrNameList, callback=Callback}};
+						 attr_list=AttrNameList, callback=Callback, event_count=0,
+						 event_notification_count=-1}};
 				_ -> {stop, wrong_number_of_parameters}
 			end
 	end.
+
+handle_call({set_benchmark_data, {BenchmarkCallback, EventNotificationCount}}, _From, State) ->
+	{reply, ok, State#state{benchmark_callback=BenchmarkCallback,
+							event_notification_count=EventNotificationCount}};
+
+handle_call(get_event_count, _From, State=#state{event_count=EventCount}) ->
+	{reply, EventCount, State};
 
 handle_call(_E, _From, State) ->
     {noreply, State}.
@@ -67,6 +75,17 @@ handle_call(_E, _From, State) ->
 % not implemented yet
 notify(_Callback, _Event, _Predicate) ->
 	ok.
+
+update_event_count(State=#state{event_count=EventCount,
+								event_notification_count=EventNotificationCount,
+								benchmark_callback=BenchmarkCallback}) ->
+	NewEventCount = EventCount + 1,
+	case NewEventCount of
+		EventNotificationCount -> BenchmarkCallback ! EventNotificationCount;
+		_ -> ok
+	end,
+		
+	State#state{event_count=NewEventCount}.
 
 %% handle incoming events, notify the observer if the event matches the predicate
 handle_cast({event, Event}, State=#state{attr_list=AttrList,
@@ -79,7 +98,7 @@ handle_cast({event, Event}, State=#state{attr_list=AttrList,
 			_ -> ok % didn't match
 		end
 	end,
-	{noreply, State};
+	{noreply, update_event_count(State)};
 
 handle_cast(_E, State) ->
     {noreply, State}.
