@@ -36,7 +36,7 @@
 %%
 
 %% Usage example (replace Ref with the actual receiver reference):
-%% {ok, Server} = filter:start([{{'$1','$2','$3'},[],[{'>','$1',1000}]}], undefined, infinity).
+%% {ok, Server} = filter:start([{{'$1','$2','$3'},[],[{'>','$1',1000}]}], Ref, infinity).
 %% gen_server:cast(Server, {event, {500, 0, 0}}).
 %% (notify is not called)
 %% gen_server:cast(Server, {event, {2000, 0, 0}}).
