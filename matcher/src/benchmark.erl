@@ -1,6 +1,6 @@
 -module(benchmark).
 
--export([run_bench/5, test_avg/4]).
+-export([run_bench/5, print_elapsed/2, test_avg/4]).
 
 -define(THOUSAND, 1000).
 -define(MILLION, 1000000).
