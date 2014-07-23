@@ -1,37 +1,24 @@
 %% A join predicate
-
-%% Input arguments:
 %%
-%% Predicate - a simple fun(ction) that returns true or false and can be
-%% converted to match specification
-%% For example: "fun({A, B}) -> A - B > 1000 end"
+%% Similar to the filter predicate, but events can be of one of two types:
+%% "left" or "right"
 %%
-%% LeftAttrNameList - list of "left" event attributes corresponding to the
-%% fun arguments. For example: [total_users]
-%% RightAttrNameList - list of "right" event attributes corresponding to the
-%% fun arguments. For example: [active_users]
-%% (The attributes in LeftAttrNameList substitute the first (left) attributes
-%% of the predicate function, the rest of the attributes is substituted by the
-%% attributes in the RightAttrNameList)
-%%
-%% If predicate equals "fun({A, B}) -> A - B > 1000 end", LeftAttrNameList
-%% equals [total_users] and RightAttrNameList equals [active_users], then a
-%% "left" event matches the predicate (causing the notify/4 function to be
-%% called) if the total_users attribute value in this event minus the
-%% active_users attribute value in the "right" event at the top of the queue
-%% for right events is greater than 1000. Similarly for a "right" event.
-%% After match test, both events are discarded (it doesn't matter what the
-%% match result is). The implication is at least one of the two queues is
+%% Example: If a predicate match spec corresponds to the function
+%% "fun({A, B, C, D, E, F}) -> A - D > 1000 end", then a
+%% "left" event which equals to {A, B, C} matches the predicate
+%% (causing the notify/4 function to be called) if the "right" event at the top
+%% of the corresponding (i.e. right) queue equals to {D, E, F} and the value
+%% of A minus the value of D is greater than 1000. Similarly for a "right"
+%% event. After match test, both events are discarded (it doesn't matter what
+%% the match result is). If there was no event in the other queue, the incoming
+%% event is added to its queue and no other action (matching) is performed.
+%% The implication is that at least one of the two queues is
 %% empty at any given time.
-%%
-%% Callback - An object that will get a notification
-%% if an incoming event matches the predicate
 
-%% Events are represented as orddicts
 %% Usage example (replace Ref with the actual receiver reference):
-%% {ok, Server} = join:start(fun({A, B}) -> A - B > 1000 end, [total_users], [active_users], Ref).
-%% gen_server:cast(Server, {left, orddict:store(total_users, 10000, orddict:new())}).
-%% gen_server:cast(Server, {right, orddict:store(active_users, 5000, orddict:new())}).
+%% {ok, Server} = join:start([{{'$1','$2','$3','$4','$5','$6'}, [], [{'>',{'-','$1','$4'},1000}]}], Ref, infinity).
+%% gen_server:cast(Server, {left, {10000, 0, 0}}).
+%% gen_server:cast(Server, {right, {1000, 0, 0}}).
 %% (notify is called)
 %% ...
 
@@ -42,87 +29,96 @@
 -behaviour(gen_server).
 
 %% API
--export([start/4, start_link/4]).
+-export([start/3, start_link/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--record(state, {predicate, left_attr_list, right_attr_list,
-	left_queue, right_queue, callback}).
+-record(state, {predicate_ms, left_queue, right_queue, callback,
+				benchmark_callback, benchmark_start_time, timeout}).
 
-start(Predicate, LeftAttrNameList, RightAttrNameList, Callback) ->
-	gen_server:start(?MODULE, [Predicate, LeftAttrNameList, RightAttrNameList, Callback], []).
+start(PredicateMS, Callback, TimeOut) ->
+	gen_server:start(?MODULE, [PredicateMS, Callback, TimeOut], []).
 
-start_link(Predicate, LeftAttrNameList, RightAttrNameList, Callback) ->
-	gen_server:start_link(?MODULE, [Predicate, LeftAttrNameList, RightAttrNameList, Callback], []).
+start_link(PredicateMS, Callback, TimeOut) ->
+	gen_server:start_link(?MODULE, [PredicateMS, Callback, TimeOut], []).
 
-init([Predicate, LeftAttrNameList, RightAttrNameList, Callback]) ->
-	MatchSpec = ets:fun2ms(Predicate),
-	case MatchSpec of
-		{error, Error} -> {stop, Error};
-		_ ->
-			% check the AttrNameList has the correct number of parameters
-			case tuple_size(element(1, hd(MatchSpec))) ==
-				(length(LeftAttrNameList)) + (length(RightAttrNameList)) of
-				true -> {ok, #state{predicate=ets:match_spec_compile(MatchSpec),
-						left_attr_list=LeftAttrNameList,
-						right_attr_list=RightAttrNameList,
-						left_queue=queue:new(), right_queue=queue:new(),
-						callback=Callback}};
-				_ -> {stop, wrong_number_of_parameters}
-			end
-	end.
+init([PredicateMS, Callback, TimeOut]) ->
+	{ok, #state{predicate_ms=ets:match_spec_compile(PredicateMS),
+				left_queue=queue:new(), right_queue=queue:new(),
+				callback=Callback, timeout=TimeOut}, TimeOut}.
+
+% set benchmark related information, store the current time
+handle_call({start_benchmark, BenchmarkCallback}, _From, State) ->
+	TimeOut = State#state.timeout,
+	{reply, ok, State#state{benchmark_callback=BenchmarkCallback,
+							benchmark_start_time=erlang:now()}, TimeOut};
 
 handle_call(_E, _From, State) ->
-    {noreply, State}.
+    {reply, ok, State}.
 
 % not implemented yet
-notify(_Callback, _LeftEvent, _RightEvent, _Predicate) ->
+notify(_Callback, _LeftEvent, _RightEvent, _LastEvent, _PredicateMS) ->
 	ok.
 
 %% check if the two events match the predicate
 %% return true if they do, false otherwise
-match(Predicate, LeftEvent, RightEvent, LeftAttrList, RightAttrList, Callback) ->
-	OrderedAttrValList = util:extract_attr_values(LeftAttrList, RightAttrList,
-		LeftEvent, RightEvent),
-	case OrderedAttrValList of
-		not_found -> false;
-		_ -> case ets:match_spec_run([list_to_tuple(OrderedAttrValList)], Predicate) of
-			[true] -> notify(Callback, LeftEvent, RightEvent, Predicate), true;
-			_ -> false
-		end
+match(PredicateMS, LeftEvent, RightEvent, LastEvent, Callback) ->
+	{A, B, C} = LeftEvent,
+	{D, E, F} = RightEvent,
+	case ets:match_spec_run([{A, B, C, D, E, F}], PredicateMS) of
+		[true] -> notify(Callback, LeftEvent, RightEvent, LastEvent, PredicateMS), true;
+		_ -> false
 	end.
 
 %% handle "left" event
-handle_cast({left, LeftEvent}, State=#state{left_attr_list=LeftAttrList,
-	right_attr_list=RightAttrList, left_queue=LeftQueue, right_queue=RightQueue,
-	predicate=Predicate, callback=Callback}) ->
+handle_cast({left, LeftEvent}, State) ->
+	LeftQueue = State#state.left_queue,
+	RightQueue = State#state.right_queue,
+	PredicateMS = State#state.predicate_ms,
+	Callback = State#state.callback,
+	TimeOut = State#state.timeout,
+	
 	NewState = case queue:out(RightQueue) of
 		{empty, _} -> State#state{left_queue=queue:in(LeftEvent, LeftQueue)};
 		{{value, RightEvent}, NewRightQueue} ->
-			match(Predicate, LeftEvent, RightEvent,
-				  LeftAttrList, RightAttrList, Callback),
+			match(PredicateMS, LeftEvent, RightEvent, left, Callback),
 			State#state{right_queue=NewRightQueue}
 	end,
-	{noreply, NewState};
+	{noreply, NewState, TimeOut};
 
 %% handle "right" event
 %% (code is duplicated, but there are no redundant comparisons)
-handle_cast({right, RightEvent}, State=#state{left_attr_list=LeftAttrList,
-	right_attr_list=RightAttrList, left_queue=LeftQueue, right_queue=RightQueue,
-	predicate=Predicate, callback=Callback}) ->
+%% TODO - maybe extract the common code into a separate method
+%% with parameters like CurrentQueue, OtherQueue...
+handle_cast({right, RightEvent}, State) ->
+	LeftQueue = State#state.left_queue,
+	RightQueue = State#state.right_queue,
+	PredicateMS = State#state.predicate_ms,
+	Callback = State#state.callback,
+	TimeOut = State#state.timeout,
+	
 	NewState = case queue:out(LeftQueue) of
 		{empty, _} -> State#state{right_queue=queue:in(RightEvent, RightQueue)};
 		{{value, LeftEvent}, NewLeftQueue} ->
-			match(Predicate, LeftEvent, RightEvent,
-				  LeftAttrList, RightAttrList, Callback),
+			match(PredicateMS, LeftEvent, RightEvent, right, Callback),
 			State#state{left_queue=NewLeftQueue}
 	end,
-	{noreply, NewState};
+	{noreply, NewState, TimeOut};
 
 handle_cast(_E, State) ->
     {noreply, State}.
+
+% send the elapsed time to the benchmark process, stop the gen_server
+% (it won't be needed again)
+handle_info(timeout, State) ->
+	BenchmarkEndTime = erlang:now(),
+	BenchmarkCallback = State#state.benchmark_callback,
+	BenchmarkStartTime = State#state.benchmark_start_time,
+	TimeOut = State#state.timeout,
+	BenchmarkCallback ! timer:now_diff(BenchmarkEndTime, BenchmarkStartTime) - (TimeOut * 1000),
+	{stop, timeout, State};
 
 handle_info(_E, State) ->
 	{noreply, State}.
