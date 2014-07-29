@@ -55,7 +55,7 @@
 -define(TABLE_NAME, events).
 
 -record(state, {predicate_ms_stub, callback,
-				benchmark_callback, benchmark_start_time, timeout}).
+				benchmark_callback, benchmark_start_time, timeout, is_last_timeout}).
 
 start(PredicateMSStub, Callback, TimeOut) ->
 	gen_server:start(?MODULE, [PredicateMSStub, Callback, TimeOut], []).
@@ -70,10 +70,11 @@ init([PredicateMSStub, Callback, TimeOut]) ->
 				callback=Callback, timeout=TimeOut}, TimeOut}.
 
 % set benchmark related information, store the current time
-handle_call({start_benchmark, BenchmarkCallback}, _From, State) ->
+handle_call({start_benchmark, IsLast, BenchmarkCallback}, _From, State) ->
 	TimeOut = State#state.timeout,
 	{reply, ok, State#state{benchmark_callback=BenchmarkCallback,
-							benchmark_start_time=erlang:now()}, TimeOut};
+							benchmark_start_time=erlang:now(),
+							is_last_timeout=IsLast}, TimeOut};
 
 handle_call(_E, _From, State) ->
     {reply, ok, State}.
@@ -133,7 +134,11 @@ handle_info(timeout, State) ->
 	BenchmarkStartTime = State#state.benchmark_start_time,
 	TimeOut = State#state.timeout,
 	BenchmarkCallback ! timer:now_diff(BenchmarkEndTime, BenchmarkStartTime) - (TimeOut * 1000),
-	{stop, timeout, State};
+
+	case State#state.is_last_timeout of
+		true -> {stop, timeout, State};
+		_ -> {noreply, State}
+	end;
 
 handle_info(_E, State) ->
 	{noreply, State}.
