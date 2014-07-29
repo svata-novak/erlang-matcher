@@ -22,6 +22,8 @@ print_elapsed(ElapsedTime, Repeats) ->
 	io:format("Average elapsed time per one event: ~p us = ~p ms = ~p s~n",
 			  [AverageEventElapsed, AverageEventElapsed / ?THOUSAND,
 			   AverageEventElapsed / ?MILLION]),
+	EventCount = 1 / AverageEventElapsed,
+	io:format("Events per s: ~p (per ms: ~p)~n", [EventCount * ?MILLION, EventCount * ?THOUSAND]),
 	ok.
 
 % set up the predicate, send Event Repeats times, print information
