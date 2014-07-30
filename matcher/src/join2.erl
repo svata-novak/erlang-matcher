@@ -65,7 +65,7 @@ start_link(PredicateMSStub, Callback, TimeOut) ->
 
 % bag - table can't contain duplicate items
 init([PredicateMSStub, Callback, TimeOut]) ->
-	ets:new(?TABLE_NAME, [bag, named_table]),
+	ets:new(?TABLE_NAME, [bag, named_table, {keypos, 1}]),
 	{ok, #state{predicate_ms_stub=PredicateMSStub,
 				callback=Callback, timeout=TimeOut}, TimeOut}.
 
