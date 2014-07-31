@@ -64,9 +64,10 @@ start(PredicateMSStub, Callback, TimeOut) ->
 start_link(PredicateMSStub, Callback, TimeOut) ->
 	gen_server:start_link(?MODULE, [PredicateMSStub, Callback, TimeOut], []).
 
-% bag - table can't contain duplicate items
+% set - keys must be unique
 init([PredicateMSStub, Callback, TimeOut]) ->
 	ets:new(?TABLE_NAME, [set, named_table, {keypos, 1}]),
+	% set the artificial key to be the first parameter
 	[{StubParameters, Guard, Body}] = PredicateMSStub,
 	Stub = [{{'_', StubParameters}, Guard, Body}],
 	{ok, #state{predicate_ms_stub=Stub,
