@@ -55,7 +55,8 @@
 -define(TABLE_NAME, events).
 
 -record(state, {predicate_ms_stub, callback,
-				benchmark_callback, benchmark_start_time, timeout, is_last_timeout}).
+				benchmark_callback, benchmark_start_time, timeout, is_last_timeout,
+				primary_key}).
 
 start(PredicateMSStub, Callback, TimeOut) ->
 	gen_server:start(?MODULE, [PredicateMSStub, Callback, TimeOut], []).
@@ -65,9 +66,11 @@ start_link(PredicateMSStub, Callback, TimeOut) ->
 
 % bag - table can't contain duplicate items
 init([PredicateMSStub, Callback, TimeOut]) ->
-	ets:new(?TABLE_NAME, [bag, named_table, {keypos, 1}]),
-	{ok, #state{predicate_ms_stub=PredicateMSStub,
-				callback=Callback, timeout=TimeOut}, TimeOut}.
+	ets:new(?TABLE_NAME, [set, named_table, {keypos, 1}]),
+	[{StubParameters, Guard, Body}] = PredicateMSStub,
+	Stub = [{{'_', StubParameters}, Guard, Body}],
+	{ok, #state{predicate_ms_stub=Stub,
+				callback=Callback, timeout=TimeOut, primary_key=1}, TimeOut}.
 
 % set benchmark related information, store the current time
 handle_call({start_benchmark, IsLast, BenchmarkCallback}, _From, State) ->
@@ -92,8 +95,9 @@ match(PredicateMSStub, Event = {_X, _Y, _Z}, Callback) ->
 	end.
 
 handle_cast({table, Event}, State) ->
-	ets:insert(?TABLE_NAME, Event),
-	{noreply, State, State#state.timeout};
+	Id = State#state.primary_key,
+	ets:insert(?TABLE_NAME, {Id, Event}),
+	{noreply, State#state{primary_key = Id + 1}, State#state.timeout};
 
 handle_cast({event, Event}, State) ->
 	match(State#state.predicate_ms_stub, Event, State#state.callback),
