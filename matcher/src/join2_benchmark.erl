@@ -163,7 +163,7 @@ bench3() ->
 	run_bench(MatchSpecStub, FirstTableItem, FirstEvent, 10000, 10000,
 		fun generate_increasing_messages/2, fun generate_increasing_messages/2),
 
-	io:format("Events don't match any items, key is bound"),
+	io:format("Events don't match any items, key is bound~n"),
 	FirstEvent2 = {event, {?MILLION, 1, 1}},
 	run_bench(MatchSpecStub, FirstTableItem, FirstEvent2, 100, 10000,
 		fun generate_increasing_messages/2, fun generate_increasing_messages/2),
