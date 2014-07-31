@@ -76,8 +76,11 @@ run_bench(MatchSpecStub, FirstTableItem, FirstEvent, TableItemCount, EventCount,
 	end,
 	
 	io:format("RESULTS:~n"),
-	io:format("MatchSpecStub: ~p~nFirst table item: ~p~nTable item count: ~p~n",
-		[MatchSpecStub, FirstTableItem, TableItemCount]),
+	io:format("MatchSpecStub: ~p~n", [MatchSpecStub]),
+	io:format("TABLE INSERTS;first table item~n"),
+	io:format("~p;~p~n",[TableItemCount, FirstTableItem]),
+	%io:format("MatchSpecStub: ~p~nFirst table item: ~p~nTable item count: ~p~n",
+		%[MatchSpecStub, FirstTableItem, TableItemCount]),
 	benchmark:print_elapsed(ElapsedTime1, TableItemCount),
 	io:format("--------------------------------------------------------------------------------~n"),	
 
@@ -88,7 +91,9 @@ run_bench(MatchSpecStub, FirstTableItem, FirstEvent, TableItemCount, EventCount,
 		ElTime2 -> ElTime2
 	end,
 
-	io:format("First event: ~p~nEvent count: ~p~n", [FirstEvent, EventCount]),
+	%io:format("First event: ~p~nEvent count: ~p~n", [FirstEvent, EventCount]),
+	io:format("EVENTS;first event~n"),
+	io:format("~p;~p~n", [EventCount, FirstEvent]),
 	benchmark:print_elapsed(ElapsedTime2, EventCount),
 	io:format("================================================================================~n"),
 	ok.
