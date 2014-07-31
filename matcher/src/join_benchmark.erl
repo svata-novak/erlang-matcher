@@ -123,7 +123,7 @@ bench2() ->
 		?MILLION + 2), % events match
 
 	run_bench(FunStr, MatchSpec, alternating_rule(Event3, Event3, 3, 83333),
-		?MILLION + 2), % event don't match
+		?MILLION + 2), % events don't match
 	
 	% 500 000 left events, then 500 000 matching right events
 	run_bench(FunStr, MatchSpec, [{1, [{?MILLION / 2, {left, Event3}},

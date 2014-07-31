@@ -16,14 +16,16 @@ repeat(Server, Event, Repeats) ->
 	end.
 
 print_elapsed(ElapsedTime, Repeats) ->
-	io:format("Elapsed time: ~p us = ~p ms = ~p s~n",
-			  [ElapsedTime, ElapsedTime / ?THOUSAND, ElapsedTime / ?MILLION]),
+	io:format("total time elapsed [s];elapsed time per event [us];events per second~n"),
+	%io:format("Elapsed time: ~p us = ~p ms = ~p s~n",
+	%		  [ElapsedTime, ElapsedTime / ?THOUSAND, ElapsedTime / ?MILLION]),
 	AverageEventElapsed = ElapsedTime / Repeats,
-	io:format("Average elapsed time per one event: ~p us = ~p ms = ~p s~n",
-			  [AverageEventElapsed, AverageEventElapsed / ?THOUSAND,
-			   AverageEventElapsed / ?MILLION]),
+	%io:format("Average elapsed time per one event: ~p us = ~p ms = ~p s~n",
+	%		  [AverageEventElapsed, AverageEventElapsed / ?THOUSAND,
+	%		   AverageEventElapsed / ?MILLION]),
 	EventCount = 1 / AverageEventElapsed,
-	io:format("Events per s: ~p (per ms: ~p)~n", [EventCount * ?MILLION, EventCount * ?THOUSAND]),
+	io:format("~p;~p;~p~n", [ElapsedTime / ?MILLION, AverageEventElapsed, EventCount * ?MILLION]),
+	%io:format("Events per s: ~p (per ms: ~p)~n", [EventCount * ?MILLION, EventCount * ?THOUSAND]),
 	ok.
 
 % set up the predicate, send Event Repeats times, print information
