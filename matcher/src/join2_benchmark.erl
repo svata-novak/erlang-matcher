@@ -116,7 +116,7 @@ bench1() ->
 	io:format("100 items in table, 100000 events, 100 % of events match~n"),
 	AlwaysMatchingEvent = {event, {-1000000, -1000000, -1000000}},
 	run_bench_increasing(MatchSpecStub, FirstTableItem, AlwaysMatchingEvent, 100, 100000),
-	io:format("100 items in table, 10000 events, 0 % of events match~n"),
+	io:format("100 items in table, 100000 events, 0 % of events match~n"),
 	run_bench_increasing(MatchSpecStub, FirstTableItem, NotMatchingEvent, 100, 100000),
 
 	io:format("10000 items in table, 10000 events, 0 % of events match~n"),
