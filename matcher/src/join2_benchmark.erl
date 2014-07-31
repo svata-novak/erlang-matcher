@@ -157,7 +157,7 @@ bench3() ->
 	FirstTableItem = {table, FirstItem},
 	FirstEvent = {event, FirstItem},
 
-	io:format("Every event matches one item, key is bound"),
+	io:format("Every event matches one item, key is bound~n"),
 	run_bench(MatchSpecStub, FirstTableItem, FirstEvent, 100, 10000,
 		fun generate_increasing_messages/2, fun generate_increasing_messages/2),
 	run_bench(MatchSpecStub, FirstTableItem, FirstEvent, 10000, 10000,
