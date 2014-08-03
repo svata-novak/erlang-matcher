@@ -67,7 +67,7 @@ start_link(PredicateMS, Callback, TimeOut) ->
 
 init([PredicateMS, Callback, TimeOut]) ->
 	{ok, #state{predicate_ms=ets:match_spec_compile(PredicateMS),
-				callback=Callback, timeout=TimeOut}, TimeOut}.
+				callback=Callback, timeout=TimeOut}}.
 
 % set benchmark related information, store the current time
 handle_call({start_benchmark, BenchmarkCallback}, _From, State) ->
