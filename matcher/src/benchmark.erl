@@ -1,11 +1,26 @@
 -module(benchmark).
 
--export([run_bench/5, print_elapsed/2, test_avg/4]).
+-export([run_bench/5, print_elapsed/2, test_avg/4, generate_messages/3, send_msgs/2]).
 
 -define(THOUSAND, 1000).
 -define(MILLION, 1000000).
 
 -define(TIMEOUT, 1000).
+
+send_msgs(Server, Messages) ->
+	lists:foreach(fun(Message) -> gen_server:cast(Server, Message) end, Messages),
+	ok.
+
+generate_messages(_Message, _NextMsgGenerator, 0, Acc) ->
+	Acc;
+
+generate_messages(Message, NextMsgGenerator, Count, Acc) ->
+	generate_messages(NextMsgGenerator(Message), NextMsgGenerator,
+					  Count - 1, [Message | Acc]).
+
+generate_messages(FirstMessage, NextMsgGenerator, Count)
+	when is_function(NextMsgGenerator, 1) ->
+	lists:reverse(generate_messages(FirstMessage, NextMsgGenerator, Count, [])).
 
 repeat(Server, Event, Repeats) ->
 	case Repeats > 0 of
